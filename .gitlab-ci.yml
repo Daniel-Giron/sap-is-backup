@@ -1,0 +1,29 @@
+stages:
+  - backup
+
+backup_sap_integration_suite:
+  stage: backup
+
+  image: python:3.12-slim
+
+  before_script:
+    - pip install -r requirements.txt
+    - git config user.name "SAP Backup Bot"
+    - git config user.email "sap-backup@example.local"
+
+  script:
+    - python backup_cpi.py
+
+    - git add .
+
+    - |
+      if git diff --cached --quiet; then
+        echo "No changes detected"
+      else
+        git commit -m "SAP Integration Suite backup $(date +%F)"
+        git push origin HEAD:$CI_COMMIT_REF_NAME
+      fi
+
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "web"
