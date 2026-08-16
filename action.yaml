@@ -63,7 +63,9 @@ runs:
       shell: bash
       env:
         UV_PROJECT: ${{ github.action_path }}
-      run: uv sync
+      run: |
+        ls -la
+        uv sync
 
     - name: Configure git user
       shell: bash
