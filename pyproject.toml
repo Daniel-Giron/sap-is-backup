@@ -1,0 +1,21 @@
+[project]
+name = "sap-is-backup"
+version = "0.1.0"
+description = "SAP Integration Suite backup utility"
+readme = "README.md"
+authors = [
+    { name = "Daniel Giron", email = "daniel.giron@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "gitpython>=3.1.59",
+    "python-dotenv>=1.2.2",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+sap-is-backup = "sap_is_backup:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
