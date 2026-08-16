@@ -96,8 +96,7 @@ runs:
         UV_PROJECT: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        ls -la
-        uv run python backup_cpi.py
+        uv run python ${{ github.action_path }}/backup_cpi.py
 
     - name: Push any remaining backup branches
       if: always()
