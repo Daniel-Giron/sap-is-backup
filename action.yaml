@@ -1,0 +1,116 @@
+name: "SAP Integration Suite Backup"
+description: "Backs up all SAP Integration Suite artifacts and pushes them to a target repository"
+
+branding:
+  icon: "download-cloud"
+  color: "blue"
+
+inputs:
+  sap_host:
+    description: "SAP Integration Suite API host (e.g. https://tenant.integration.sap.com/api)"
+    required: true
+  sap_user:
+    description: "SAP username"
+    required: true
+  sap_password:
+    description: "SAP password"
+    required: true
+  target_repo:
+    description: "Target repository in owner/repo format (e.g. my-org/sap-backup-repo)"
+    required: true
+  target_repo_token:
+    description: "GitHub personal access token with write access to the target repo"
+    required: true
+  target_repo_username:
+    description: "GitHub username for the target repo (optional, defaults to x-access-token)"
+    required: false
+    default: "x-access-token"
+  python_version:
+    description: "Python version to use"
+    required: false
+    default: "3.12"
+
+outputs:
+  backup_branch:
+    description: "Name of the backup branch created by this run"
+    value: ${{ steps.capture_branch.outputs.branch }}
+  artifact_count:
+    description: "Number of artifact packages downloaded"
+    value: ${{ steps.capture_count.outputs.count }}
+  status:
+    description: "Backup status (success or failure)"
+    value: ${{ steps.run_backup.outcome }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: true
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install uv
+      shell: bash
+      run: pip install --upgrade uv
+
+    - name: Install dependencies
+      shell: bash
+      run: uv sync
+
+    - name: Configure git user
+      shell: bash
+      run: |
+        git config user.name "SAP Backup Bot"
+        git config user.email "sap-backup@bot.local"
+
+    - name: Set up git credential helper
+      shell: bash
+      run: |
+        git config --global credential.helper 'store --file=/tmp/.git-credentials'
+        echo "https://${{ inputs.target_repo_username }}:${{ inputs.target_repo_token }}@github.com" \
+          >> /tmp/.git-credentials
+
+    - name: Set up target repo remote
+      shell: bash
+      run: |
+        git remote set-url origin \
+          "https://${{ inputs.target_repo_username }}:${{ inputs.target_repo_token }}@github.com/${{ inputs.target_repo }}"
+
+    - name: Run backup
+      id: run_backup
+      shell: bash
+      env:
+        SAP_HOST: ${{ inputs.sap_host }}
+        SAP_USER: ${{ inputs.sap_user }}
+        SAP_PASSWORD: ${{ inputs.sap_password }}
+      run: |
+        set -euo pipefail
+        uv run python backup_cpi.py
+
+    - name: Push any remaining backup branches
+      if: always()
+      shell: bash
+      run: |
+        git push origin 'refs/heads/backup-*' || true
+
+    - name: Capture backup branch name
+      id: capture_branch
+      shell: bash
+      run: |
+        BRANCHES=$(git branch --list 'backup-*' --sort=-creatordate | head -n1 | tr -d ' ')
+        echo "branch=${BRANCHES:-unknown}"
+        echo "branch=${BRANCHES:-unknown}" >> "$GITHUB_OUTPUT"
+
+    - name: Capture artifact count
+      id: capture_count
+      shell: bash
+      run: |
+        COUNT=$(find artifacts/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)
+        echo "count=${COUNT}"
+        echo "count=${COUNT}" >> "$GITHUB_OUTPUT"

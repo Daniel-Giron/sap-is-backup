@@ -1,0 +1,33 @@
+name: Daily backup for repository
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"  # Daily at 03:00 UTC
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: sap-backup
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Run SAP Integration Suite backup
+        id: sap_backup
+        uses: Daniel-Giron/sap-is-backup@main
+        with:
+          sap_host: ${{ secrets.SAP_HOST }}
+          sap_user: ${{ secrets.SAP_USER }}
+          sap_password: ${{ secrets.SAP_PASSWORD }}
+          target_repo: ${{ secrets.TARGET_REPO }}
+          target_repo_token: ${{ secrets.TARGET_REPO_TOKEN }}
+
+      - name: Report backup results
+        if: always()
+        run: |
+          echo "=== Backup Summary ==="
+          echo "Status: ${{ steps.sap_backup.outcome }}"
+          echo "Backup branch: ${{ steps.sap_backup.outputs.backup_branch }}"
+          echo "Artifact packages: ${{ steps.sap_backup.outputs.artifact_count }}"

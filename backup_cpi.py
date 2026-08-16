@@ -18,6 +18,7 @@ from requests.auth import HTTPBasicAuth
 
 try:
     from dotenv import load_dotenv
+
     load_dotenv()  # Load environment variables from .env file
     print("Loaded configuration from .env file")
 except ImportError:
@@ -27,20 +28,41 @@ SAP_HOST = os.environ["SAP_HOST"].rstrip("/")
 SAP_USER = os.environ["SAP_USER"]
 SAP_PASSWORD = os.environ["SAP_PASSWORD"]
 
-ARTIFACT_TYPES : dict[str, dict[str, str]] = {
-  'iflow':              {'files_path': 'iflows', 'odata_path': 'IntegrationDesigntimeArtifacts'},
-  'message_mapping' :   {'files_path': 'message_mappings', 'odata_path': 'MessageMappingDesigntimeArtifacts'},
-  'value_mapping':      {'files_path': 'value_mappings', 'odata_path': 'ValueMappingDesigntimeArtifacts'},
-  'script_collection':  {'files_path': 'script_collections', 'odata_path': 'ScriptCollectionDesigntimeArtifacts'},
-  'message_type':       {'files_path': 'message_types', 'odata_path': 'MessageTypeDesigntimeArtifacts'},
-  'fault_message_type': {'files_path': 'fault_message_types', 'odata_path': 'FaultMessageTypeDesigntimeArtifacts'},
-  'data_type':          {'files_path': 'data_types', 'odata_path': 'DataTypeDesigntimeArtifacts'},
-  'service_interface':  {'files_path': 'service_interfaces', 'odata_path': 'ServiceInterfaceDesigntimeArtifacts'}
+ARTIFACT_TYPES: dict[str, dict[str, str]] = {
+    "iflow": {"files_path": "iflows", "odata_path": "IntegrationDesigntimeArtifacts"},
+    "message_mapping": {
+        "files_path": "message_mappings",
+        "odata_path": "MessageMappingDesigntimeArtifacts",
+    },
+    "value_mapping": {
+        "files_path": "value_mappings",
+        "odata_path": "ValueMappingDesigntimeArtifacts",
+    },
+    "script_collection": {
+        "files_path": "script_collections",
+        "odata_path": "ScriptCollectionDesigntimeArtifacts",
+    },
+    "message_type": {
+        "files_path": "message_types",
+        "odata_path": "MessageTypeDesigntimeArtifacts",
+    },
+    "fault_message_type": {
+        "files_path": "fault_message_types",
+        "odata_path": "FaultMessageTypeDesigntimeArtifacts",
+    },
+    "data_type": {
+        "files_path": "data_types",
+        "odata_path": "DataTypeDesigntimeArtifacts",
+    },
+    "service_interface": {
+        "files_path": "service_interfaces",
+        "odata_path": "ServiceInterfaceDesigntimeArtifacts",
+    },
 }
 
-ARTIFACTS_DIR = Path('artifacts')
-GIT_BRANCH_PREFIX : str = "backup-"
-GIT_COMMIT_MESSAGE : str = "Backup SAP Integration Suite artifacts"
+ARTIFACTS_DIR = Path("artifacts")
+GIT_BRANCH_PREFIX: str = "backup-"
+GIT_COMMIT_MESSAGE: str = "Backup SAP Integration Suite artifacts"
 
 # =====================================================
 # HTTP Session
@@ -49,11 +71,7 @@ GIT_COMMIT_MESSAGE : str = "Backup SAP Integration Suite artifacts"
 session = requests.Session()
 session.auth = HTTPBasicAuth(SAP_USER, SAP_PASSWORD)
 
-session.headers.update(
-    {
-        "Accept": "application/json"
-    }
-)
+session.headers.update({"Accept": "application/json"})
 
 # =====================================================
 # Git Configuration
@@ -69,22 +87,33 @@ except ImportError:
 # Helpers
 # =====================================================
 
+
 def get_artifact_path(artifact_id: str, package_id: str, artifact_type: str) -> Path:
     # Normalize package name for filesystem (replace special chars)
     safe_package = "".join(c if c.isalnum() else "_" for c in package_id)
-    
-    return ARTIFACTS_DIR / safe_package / ARTIFACT_TYPES[artifact_type]['files_path'] / artifact_id
+
+    return (
+        ARTIFACTS_DIR
+        / safe_package
+        / ARTIFACT_TYPES[artifact_type]["files_path"]
+        / artifact_id
+    )
+
 
 def get_subobject_path(artifact_id: str, package_id: str, subobject_type: str) -> Path:
-    
+
     safe_package = "".join(c if c.isalnum() else "_" for c in package_id)
-    
-    return ARTIFACTS_DIR / safe_package / "integration-flow" / artifact_id / subobject_type
+
+    return (
+        ARTIFACTS_DIR / safe_package / "integration-flow" / artifact_id / subobject_type
+    )
+
 
 def clean_directory(directory: Path):
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir(parents=True, exist_ok=True)
+
 
 def download_artifact(artifact_id, version, artifact_type, max_retries=3):
     """
@@ -106,16 +135,19 @@ def download_artifact(artifact_id, version, artifact_type, max_retries=3):
                 print(f"Artifact {artifact_id} not found (attempt {attempt + 1})")
                 break
             else:
-                print(f"Failed downloading {artifact_id}. HTTP {response.status_code} (attempt {attempt + 1})")
+                print(
+                    f"Failed downloading {artifact_id}. HTTP {response.status_code} (attempt {attempt + 1})"
+                )
         except Exception as e:
             print(f"Error downloading {artifact_id}: {str(e)} (attempt {attempt + 1})")
-    
+
     return None
 
 
 # =====================================================
 # Helper function to download and extract artifacts
 # =====================================================
+
 
 def download_and_extract_artifact(artifact_id, version, target_dir, artifact_type):
     """
@@ -133,10 +165,9 @@ def download_and_extract_artifact(artifact_id, version, target_dir, artifact_typ
             response = session.get(download_url, timeout=300)
             if response.status_code == 200:
                 zip_bytes = response.content
-                
+
                 with tempfile.NamedTemporaryFile(
-                    suffix=".zip",
-                    delete=False
+                    suffix=".zip", delete=False
                 ) as temp_zip:
                     temp_zip.write(zip_bytes)
                     zip_file = temp_zip.name
@@ -153,18 +184,24 @@ def download_and_extract_artifact(artifact_id, version, target_dir, artifact_typ
                 finally:
                     os.remove(zip_file)
             elif response.status_code == 404:
-                print(f"{artifact_type} {artifact_id} not found (attempt {attempt + 1})")
+                print(
+                    f"{artifact_type} {artifact_id} not found (attempt {attempt + 1})"
+                )
                 break
             else:
-                print(f"Failed downloading {artifact_id}. HTTP {response.status_code} (attempt {attempt + 1})")
+                print(
+                    f"Failed downloading {artifact_id}. HTTP {response.status_code} (attempt {attempt + 1})"
+                )
         except Exception as e:
             print(f"Error downloading {artifact_id}: {str(e)} (attempt {attempt + 1})")
-    
+
     return False
+
 
 # =====================================================
 # Download subobjects for each iflow (configuration, resources)
 # =====================================================
+
 
 def download_subobject(artifact_id, version, subobject_type):
     """
@@ -174,7 +211,7 @@ def download_subobject(artifact_id, version, subobject_type):
     # Try both OData v2 and v4 endpoints
     endpoints = [
         f"{SAP_HOST}/api/v1/IntegrationDesigntimeArtifacts('{artifact_id}',Version='{version}')/{subobject_type}/$value",
-        f"{SAP_HOST}/api/v1/IntegrationDesigntimeArtifacts({artifact_id},Version='{version}')/{subobject_type}/$value"
+        f"{SAP_HOST}/api/v1/IntegrationDesigntimeArtifacts({artifact_id},Version='{version}')/{subobject_type}/$value",
     ]
 
     for endpoint in endpoints:
@@ -183,15 +220,20 @@ def download_subobject(artifact_id, version, subobject_type):
             if response.status_code == 200:
                 return response.content
             elif response.status_code != 404:
-                print(f"Warning: {subobject_type} for {artifact_id}: HTTP {response.status_code}")
+                print(
+                    f"Warning: {subobject_type} for {artifact_id}: HTTP {response.status_code}"
+                )
         except Exception as e:
             print(f"Error downloading {subobject_type} for {artifact_id}: {str(e)}")
-    
+
     return None
 
+
 def main():
-    return download_all_packages()
-    
+    download_all_packages()
+    git_add_and_push()
+
+
 def download_all_packages():
     # =====================================================
     # Read package inventory first
@@ -215,7 +257,7 @@ def download_all_packages():
     for package in packages:
         package_id = package["Id"]
         print(f"Processing package: {package_id}")
-        
+
         # =====================================================
         # Process all artifacts by type
         # =====================================================
@@ -223,14 +265,18 @@ def download_all_packages():
         for artifact_type in ARTIFACT_TYPES.keys():
             artifacts_url = f"{SAP_HOST}/api/v1/IntegrationPackages('{package_id}')/{ARTIFACT_TYPES[artifact_type]['odata_path']}"
             response = session.get(artifacts_url, timeout=120)
-            
+
             package_artifacts = []
             if response.status_code == 200:
                 payload = response.json()
                 package_artifacts = payload["d"]["results"]
-                print(f"Found {len(package_artifacts)} {artifact_type} artifacts in package {package_id}")
+                print(
+                    f"Found {len(package_artifacts)} {artifact_type} artifacts in package {package_id}"
+                )
             else:
-                print(f"Warning: Failed to get {artifact_type} artifacts for package {package_id}. HTTP {response.status_code}")
+                print(
+                    f"Warning: Failed to get {artifact_type} artifacts for package {package_id}. HTTP {response.status_code}"
+                )
 
             # Process each artifact
             for artifact in package_artifacts:
@@ -238,14 +284,18 @@ def download_all_packages():
                 version = artifact["Version"]
                 package_id = artifact.get("PackageId", "")
 
-                print(f"Exporting {artifact_type} {artifact_id} ({version}) - Package: {package_id}, Type: {artifact_type}")
+                print(
+                    f"Exporting {artifact_type} {artifact_id} ({version}) - Package: {package_id}, Type: {artifact_type}"
+                )
 
                 # Use organized path structure
                 target_dir = get_artifact_path(artifact_id, package_id, artifact_type)
 
                 clean_directory(target_dir)
 
-                if not download_and_extract_artifact(artifact_id, version, target_dir, artifact_type):
+                if not download_and_extract_artifact(
+                    artifact_id, version, target_dir, artifact_type
+                ):
                     print(f"Skipping {artifact_id} - Download failed after retries")
                     continue
 
@@ -255,176 +305,58 @@ def download_all_packages():
                     "packageId": package_id,
                     "type": artifact_type,
                     "path": str(target_dir.relative_to(ARTIFACTS_DIR)),
-                    "timestamp": datetime.datetime.now().isoformat()
+                    "timestamp": datetime.datetime.now().isoformat(),
                 }
 
                 with open(
-                    target_dir / "artifact-metadata.json",
-                    "w",
-                    encoding="utf-8"
+                    target_dir / "artifact-metadata.json", "w", encoding="utf-8"
                 ) as f:
-                    json.dump(
-                        metadata,
-                        f,
-                        indent=2,
-                        ensure_ascii=False
-                    )
+                    json.dump(metadata, f, indent=2, ensure_ascii=False)
 
     # print(f"Total integration artifacts found: {len(artifacts)}")
 
-'''
-def download_artifact_by_type(artifact_type, endpoint_template):
-    """
-    Download artifacts of a specific type using the provided endpoint template.
-    Returns list of downloaded artifact info dicts.
-    """
-    downloaded = []
-    
-    try:
-        response = session.get(endpoint_template, timeout=120)
-        if response.status_code == 200:
-            payload = response.json()
-            items = payload.get("d", {}).get("results", [])
-            
-            for item in items:
-                artifact_id = item.get("Id")
-                version = item.get("Version", "1.0.0")  # Default version
-                name = item.get("Name", artifact_id)
-                package_id = item.get("PackageId", "global")
-                
-                target_dir = get_artifact_path(artifact_id, package_id, artifact_type)
-                clean_directory(target_dir)
-                
-                print(f"Exporting {artifact_type}: {name} ({artifact_id}) - Package: {package_id}")
-                
-                if download_and_extract_artifact(artifact_id, version, target_dir, artifact_type):
-                    metadata = {
-                        "id": artifact_id,
-                        "version": version,
-                        "name": name,
-                        "type": artifact_type,
-                        "packageId": package_id,
-                        "path": str(target_dir.relative_to(ARTIFACTS_DIR)),
-                        "timestamp": datetime.datetime.now().isoformat()
-                    }
-                    
-                    with open(
-                        target_dir / "artifact-metadata.json",
-                        "w",
-                        encoding="utf-8"
-                    ) as f:
-                        json.dump(metadata, f, indent=2, ensure_ascii=False)
-                    
-                    downloaded.append({
-                        "id": artifact_id,
-                        "name": name,
-                        "type": artifact_type
-                    })
-        else:
-            print(f"Warning: Failed to get {artifact_type}. HTTP {response.status_code}")
-    except Exception as e:
-        print(f"Error downloading {artifact_type}: {str(e)}")
-    
-    return downloaded
-'''
-# Download configuration and resources for each iflow
-'''
-for artifact in artifacts:
-    artifact_id = artifact["Id"]
-    version = artifact["Version"]
-    package_id = artifact.get("PackageId", "global")
-    
-    # Only process iflows (IntegrationFlow artifacts)
-    if artifact.get("ArtifactType") == "IntegrationFlow":
-        print(f"Processing subobjects for iflow: {artifact_id}")
-        
-                # Download configuration
-        try:
-            config_zip = download_subobject(artifact_id, version, "Configuration")
-            if config_zip:
-                target_dir = get_subobject_path(artifact_id, package_id, "configuration")
-                clean_directory(target_dir)
-                
-                with tempfile.NamedTemporaryFile(
-                    suffix=".zip",
-                    delete=False
-                ) as temp_zip:
-                    temp_zip.write(config_zip)
-                    zip_file = temp_zip.name
 
-                try:
-                    with zipfile.ZipFile(zip_file) as zf:
-                        if not zf.testzip():
-                            zf.extractall(target_dir)
-                            print(f"Downloaded configuration for {artifact_id}")
-                        else:
-                            print(f"Warning: Corrupt config zip for {artifact_id}")
-                finally:
-                    os.remove(zip_file)
-        except Exception as e:
-            print(f"Error downloading configuration for {artifact_id}: {str(e)}")
-        
-        # Download resources
-        try:
-            resources_zip = download_subobject(artifact_id, version, "Resources")
-            if resources_zip:
-                target_dir = get_subobject_path(artifact_id, package_id, "resources")
-                clean_directory(target_dir)
-                
-                with tempfile.NamedTemporaryFile(
-                    suffix=".zip",
-                    delete=False
-                ) as temp_zip:
-                    temp_zip.write(resources_zip)
-                    zip_file = temp_zip.name
-
-                try:
-                    with zipfile.ZipFile(zip_file) as zf:
-                        if not zf.testzip():
-                            zf.extractall(target_dir)
-                            print(f"Downloaded resources for {artifact_id}")
-                        else:
-                            print(f"Warning: Corrupt resources zip for {artifact_id}")
-                finally:
-                    os.remove(zip_file)
-        except Exception as e:
-            print(f"Error downloading resources for {artifact_id}: {str(e)}")
-'''
 # =====================================================
 # Git Operations (if gitpython is available)
 # =====================================================
 
-if git:
-    try:
-        repo = git.Repo(search_parent_directories=False)
-        current_branch = repo.active_branch.name
-        
-        # Create new branch for this backup
-        timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        new_branch_name = f"{GIT_BRANCH_PREFIX}{timestamp}"
-        
+
+def git_add_and_push():
+    if git:
         try:
-            repo.git.checkout("HEAD", b=new_branch_name)
-        except git.exc.GitCommandError: # pyright: ignore[reportAttributeAccessIssue]
-            # Branch already exists, checkout existing
-            repo.git.checkout(new_branch_name)
-        
-        # Add all changes and commit
-        repo.git.add(ARTIFACTS_DIR, all=True)
-        
-        if repo.index.diff("HEAD"):
-            commit_message = f"{GIT_COMMIT_MESSAGE} - {timestamp}"
-            repo.index.commit(commit_message)
-            
-            # Push to remote
+            repo = git.Repo(search_parent_directories=False)
+            current_branch = repo.active_branch.name
+
+            # Create new branch for this backup
+            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            new_branch_name = f"{GIT_BRANCH_PREFIX}{timestamp}"
+
             try:
-                origin = repo.remote(name="origin")
-                origin.push(new_branch_name)
-                print(f"Pushed changes to branch: {new_branch_name}")
-            except Exception as e:
-                print(f"Failed to push changes: {str(e)}")
-        else:
-            print("No changes to commit")
-            
-    except Exception as e:
-        print(f"Git operations failed: {str(e)}")
+                repo.git.checkout("HEAD", b=new_branch_name)
+            except git.exc.GitCommandError:  # pyright: ignore[reportAttributeAccessIssue]
+                # Branch already exists, checkout existing
+                repo.git.checkout(new_branch_name)
+
+            # Add all changes and commit
+            repo.git.add(ARTIFACTS_DIR, all=True)
+
+            if repo.index.diff("HEAD"):
+                commit_message = f"{GIT_COMMIT_MESSAGE} - {timestamp}"
+                repo.index.commit(commit_message)
+
+                # Push to remote
+                try:
+                    origin = repo.remote(name="origin")
+                    origin.push(new_branch_name)
+                    print(f"Pushed changes to branch: {new_branch_name}")
+                except Exception as e:
+                    print(f"Failed to push changes: {str(e)}")
+            else:
+                print("No changes to commit")
+
+        except Exception as e:
+            print(f"Git operations failed: {str(e)}")
+
+
+if __name__ == "__main__":
+    main()
