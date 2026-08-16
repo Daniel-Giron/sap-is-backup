@@ -29,6 +29,10 @@ inputs:
     description: "Python version to use"
     required: false
     default: "3.12"
+  backup_tags:
+    description: "Comma-separated backup tags (e.g. 'latest,weekly'). 'latest' is always force-moved; others are created once."
+    required: false
+    default: "latest"
 
 outputs:
   backup_branch:
@@ -93,6 +97,7 @@ runs:
         SAP_HOST: ${{ inputs.sap_host }}
         SAP_USER: ${{ inputs.sap_user }}
         SAP_PASSWORD: ${{ inputs.sap_password }}
+        BACKUP_TAGS: ${{ inputs.backup_tags }}
         UV_PROJECT: ${{ github.action_path }}
       run: |
         set -euo pipefail
@@ -103,6 +108,7 @@ runs:
       shell: bash
       run: |
         git push origin 'refs/heads/backup-*' || true
+        git push origin --tags || true
 
     - name: Capture backup branch name
       id: capture_branch

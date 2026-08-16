@@ -6,23 +6,33 @@ backup_sap_integration_suite:
 
   image: python:3.12-slim
 
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+
   before_script:
-    - pip install -r requirements.txt
+    - pip install --upgrade uv
+    - uv sync
     - git config user.name "SAP Backup Bot"
     - git config user.email "sap-backup@example.local"
 
   script:
-    - python backup_cpi.py
-
-    - git add .
-
     - |
-      if git diff --cached --quiet; then
-        echo "No changes detected"
-      else
-        git commit -m "SAP Integration Suite backup $(date +%F)"
-        git push origin HEAD:$CI_COMMIT_REF_NAME
-      fi
+      set -euo pipefail
+      uv run python backup_cpi.py
+
+  after_script:
+    - |
+      # Push any remaining backup branches and tags (safety net)
+      git push origin 'refs/heads/backup-*' || true
+      git push origin --tags || true
+
+      # Report backup summary
+      echo "=== Backup Summary ==="
+      LATEST_BRANCH=$(git branch --list 'backup-*' --sort=-creatordate | head -n1 | tr -d ' ')
+      echo "Latest backup branch: ${LATEST_BRANCH:-unknown}"
+      ARTIFACT_COUNT=$(find artifacts/ -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)
+      echo "Artifact packages: ${ARTIFACT_COUNT}"
 
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"

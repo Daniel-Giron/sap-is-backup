@@ -4,7 +4,6 @@ import datetime
 import json
 import os
 import shutil
-import subprocess
 import tempfile
 import zipfile
 from pathlib import Path
@@ -63,6 +62,10 @@ ARTIFACT_TYPES: dict[str, dict[str, str]] = {
 ARTIFACTS_DIR = Path("artifacts")
 GIT_BRANCH_PREFIX: str = "backup-"
 GIT_COMMIT_MESSAGE: str = "Backup SAP Integration Suite artifacts"
+GIT_TAG_PREFIX: str = "backup-"
+BACKUP_TAGS: list[str] = [
+    t.strip() for t in os.environ.get("BACKUP_TAGS", "latest").split(",") if t.strip()
+]
 
 # =====================================================
 # HTTP Session
@@ -321,11 +324,39 @@ def download_all_packages():
 # =====================================================
 
 
+def git_tag_commit(repo, commit, tags: list[str]):
+    """Tag a commit with backup tags. 'latest' is always force-moved; others are created only if missing."""
+    for tag in tags:
+        tag_name = f"{GIT_TAG_PREFIX}{tag}"
+        try:
+            if tag == "latest":
+                # Always move 'latest' to the newest backup
+                repo.git.tag("-f", tag_name, commit.hexsha)
+                print(f"Moved tag '{tag_name}' to commit {commit.hexsha[:8]}")
+            else:
+                # Create only if it doesn't exist
+                try:
+                    repo.git.rev_parse("--verify", tag_name)
+                    print(f"Tag '{tag_name}' already exists, skipping")
+                except git.exc.GitCommandError:  # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
+                    repo.git.tag(tag_name, commit.hexsha)
+                    print(f"Created tag '{tag_name}' on commit {commit.hexsha[:8]}")
+        except Exception as e:
+            print(f"Failed to create tag '{tag_name}': {str(e)}")
+
+    # Push all tags
+    try:
+        origin = repo.remote(name="origin")
+        origin.push(tags=True)
+        print("Pushed tags to remote")
+    except Exception as e:
+        print(f"Failed to push tags: {str(e)}")
+
+
 def git_add_and_push():
     if git:
         try:
             repo = git.Repo(search_parent_directories=False)
-            current_branch = repo.active_branch.name
 
             # Create new branch for this backup
             timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -342,7 +373,10 @@ def git_add_and_push():
 
             if repo.index.diff("HEAD"):
                 commit_message = f"{GIT_COMMIT_MESSAGE} - {timestamp}"
-                repo.index.commit(commit_message)
+                commit = repo.index.commit(commit_message)
+
+                # Tag the commit
+                git_tag_commit(repo, commit, BACKUP_TAGS)
 
                 # Push to remote
                 try:
