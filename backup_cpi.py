@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import time
+import types
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -74,26 +75,28 @@ BACKUP_TAGS: list[str] = [
 # HTTP Session
 # =====================================================
 
+
 def get_system_timezone() -> ZoneInfo:
     """Safely retrieves the current OS timezone."""
     # 1. Check the OS environment variable (Common in Unix/Linux)
-    tz_name = os.environ.get('TZ')
-    
+    tz_name = os.environ.get("TZ")
+
     # 2. Fallback to system-level local timezone name if 'TZ' isn't explicitly set
-    if not tz_name and hasattr(time, 'tzname'):
+    if not tz_name and hasattr(time, "tzname"):
         try:
             # time.tzname usually returns a tuple like ('EST', 'EDT')
             # The daylight flag determines which index to pick
             tz_name = time.tzname[time.daylight]
         except ValueError:
-            tz_name = 'UTC' # Ultimate fallback
-            
+            tz_name = "UTC"  # Ultimate fallback
+
     # 3. Safely build the ZoneInfo object
     try:
-        return ZoneInfo(tz_name if tz_name else 'UTC')
+        return ZoneInfo(tz_name if tz_name else "UTC")
     except (ZoneInfoNotFoundError, TypeError):
         # Fallback to local system time if the string isn't an IANA name
-        return ZoneInfo('UTC')
+        return ZoneInfo("UTC")
+
 
 runtime_tz_adjusted = datetime.now(get_system_timezone())
 
@@ -109,23 +112,28 @@ session.headers.update({"Accept": "application/json"})
 try:
     import git
 except ImportError:
-    git = None
+    git: types.ModuleType | None = None  # type: ignore[no-redef]
     print("Warning: gitpython not installed. Git operations will be skipped.")
-    
+
 try:
     from git import GitCommandError, InvalidGitRepositoryError
 except ImportError:
-    try: # Try to use a generic GitError if specific exceptions are not available
+    try:  # Try to use a generic GitError if specific exceptions are not available
         from git import GitError
-        GitCommandNotFound = GitError
-        InvalidGitRepositoryError = GitError
-        GitCommandError = GitError
-    except ImportError: # Fallback to generic Exception if gitpython exceptions are not available
-        GitError = Exception
-        GitCommandNotFound = Exception
-        InvalidGitRepositoryError = Exception
-        GitCommandError = Exception
-        print("Warning: gitpython exceptions not available. Git operations may fail without proper exception handling.")
+
+        GitCommandNotFound = GitError  # type: ignore[misc, assignment]
+        InvalidGitRepositoryError = GitError  # type: ignore[misc, assignment]
+        GitCommandError = GitError  # type: ignore[misc, assignment]
+    except (
+        ImportError
+    ):  # Fallback to generic Exception if gitpython exceptions are not available
+        GitError = Exception  # type: ignore[misc, assignment]
+        GitCommandNotFound = Exception  # type: ignore[misc, assignment]
+        InvalidGitRepositoryError = Exception  # type: ignore[misc, assignment]
+        GitCommandError = Exception  # type: ignore[misc, assignment]
+        print(
+            "Warning: gitpython exceptions not available. Git operations may fail without proper exception handling."
+        )
 
 # =====================================================
 # Helpers
@@ -153,13 +161,15 @@ def get_subobject_path(artifact_id: str, package_id: str, subobject_type: str) -
     )
 
 
-def clean_directory(directory: Path):
+def clean_directory(directory: Path) -> None:
     if directory.exists():
         shutil.rmtree(directory)
     directory.mkdir(parents=True, exist_ok=True)
 
 
-def download_artifact(artifact_id, version, artifact_type, max_retries=3):
+def download_artifact(
+    artifact_id, version, artifact_type, max_retries=3
+) -> bytes | None:
     """
     Download artifact with retry logic.
     Returns None if all retries fail.
@@ -193,7 +203,9 @@ def download_artifact(artifact_id, version, artifact_type, max_retries=3):
 # =====================================================
 
 
-def download_and_extract_artifact(artifact_id, version, target_dir, artifact_type):
+def download_and_extract_artifact(
+    artifact_id, version, target_dir, artifact_type
+) -> bool:
     """
     Download artifact with retry logic and extract to target directory.
     Returns True if successful, False otherwise.
@@ -247,7 +259,7 @@ def download_and_extract_artifact(artifact_id, version, target_dir, artifact_typ
 # =====================================================
 
 
-def download_subobject(artifact_id, version, subobject_type):
+def download_subobject(artifact_id, version, subobject_type) -> bytes | None:
     """
     Download a subobject (configuration or resource) for an artifact.
     Returns None if not found or failed, otherwise returns zip content.
@@ -273,12 +285,12 @@ def download_subobject(artifact_id, version, subobject_type):
     return None
 
 
-def main():
+def main() -> None:
     download_all_packages()
     git_add_and_push()
 
 
-def download_all_packages():
+def download_all_packages() -> None:
     # =====================================================
     # Read package inventory first
     # =====================================================
@@ -324,7 +336,7 @@ def download_all_packages():
 
             # Process each artifact
             artifacts.setdefault(artifact_type, []).extend(package_artifacts)
-            
+
             for artifact in package_artifacts:
                 artifact_id = artifact["Id"]
                 version = artifact["Version"]
@@ -367,7 +379,7 @@ def download_all_packages():
 # =====================================================
 
 
-def git_tag_commit(repo, commit, tags: list[str]):
+def git_tag_commit(repo, commit, tags: list[str]) -> None:
     """Tag a commit with backup tags. 'latest' is always force-moved; others are created only if missing."""
     for tag in tags:
         tag_name = f"{GIT_TAG_PREFIX}{tag}"
@@ -381,7 +393,7 @@ def git_tag_commit(repo, commit, tags: list[str]):
                 try:
                     repo.git.rev_parse("--verify", tag_name)
                     print(f"Tag '{tag_name}' already exists, skipping")
-                except GitCommandError:  
+                except GitCommandError:
                     repo.git.tag(tag_name, commit.hexsha)
                     print(f"Created tag '{tag_name}' on commit {commit.hexsha[:8]}")
         except GitCommandError as e:
@@ -396,8 +408,8 @@ def git_tag_commit(repo, commit, tags: list[str]):
         print(f"Failed to push tags: {e!s}")
 
 
-def git_add_and_push():
-    if git and GitCommandError and InvalidGitRepositoryError:
+def git_add_and_push() -> None:
+    if git:
         try:
             repo = git.Repo(search_parent_directories=False)
 
@@ -407,11 +419,13 @@ def git_add_and_push():
 
             try:
                 repo.git.checkout("HEAD", b=new_branch_name)
-            except GitCommandError: 
+            except GitCommandError:
                 # Branch already exists, checkout existing
                 repo.git.checkout(new_branch_name)
             except InvalidGitRepositoryError:
-                print("Error: Current directory is not a Git repository. Skipping Git operations.")
+                print(
+                    "Error: Current directory is not a Git repository. Skipping Git operations."
+                )
                 return
 
             # Add all changes and commit
