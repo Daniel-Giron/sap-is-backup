@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 
-import datetime
 import json
 import os
 import shutil
 import tempfile
+import time
 import zipfile
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import requests
+from requests import RequestException
 from requests.auth import HTTPBasicAuth
 
 # =====================================================
@@ -71,6 +74,29 @@ BACKUP_TAGS: list[str] = [
 # HTTP Session
 # =====================================================
 
+def get_system_timezone() -> ZoneInfo:
+    """Safely retrieves the current OS timezone."""
+    # 1. Check the OS environment variable (Common in Unix/Linux)
+    tz_name = os.environ.get('TZ')
+    
+    # 2. Fallback to system-level local timezone name if 'TZ' isn't explicitly set
+    if not tz_name and hasattr(time, 'tzname'):
+        try:
+            # time.tzname usually returns a tuple like ('EST', 'EDT')
+            # The daylight flag determines which index to pick
+            tz_name = time.tzname[time.daylight]
+        except ValueError:
+            tz_name = 'UTC' # Ultimate fallback
+            
+    # 3. Safely build the ZoneInfo object
+    try:
+        return ZoneInfo(tz_name if tz_name else 'UTC')
+    except (ZoneInfoNotFoundError, TypeError):
+        # Fallback to local system time if the string isn't an IANA name
+        return ZoneInfo('UTC')
+
+runtime_tz_adjusted = datetime.now(get_system_timezone())
+
 session = requests.Session()
 session.auth = HTTPBasicAuth(SAP_USER, SAP_PASSWORD)
 
@@ -85,6 +111,21 @@ try:
 except ImportError:
     git = None
     print("Warning: gitpython not installed. Git operations will be skipped.")
+    
+try:
+    from git import GitCommandError, InvalidGitRepositoryError
+except ImportError:
+    try: # Try to use a generic GitError if specific exceptions are not available
+        from git import GitError
+        GitCommandNotFound = GitError
+        InvalidGitRepositoryError = GitError
+        GitCommandError = GitError
+    except ImportError: # Fallback to generic Exception if gitpython exceptions are not available
+        GitError = Exception
+        GitCommandNotFound = Exception
+        InvalidGitRepositoryError = Exception
+        GitCommandError = Exception
+        print("Warning: gitpython exceptions not available. Git operations may fail without proper exception handling.")
 
 # =====================================================
 # Helpers
@@ -141,8 +182,8 @@ def download_artifact(artifact_id, version, artifact_type, max_retries=3):
                 print(
                     f"Failed downloading {artifact_id}. HTTP {response.status_code} (attempt {attempt + 1})"
                 )
-        except Exception as e:
-            print(f"Error downloading {artifact_id}: {str(e)} (attempt {attempt + 1})")
+        except RequestException as e:
+            print(f"Error downloading {artifact_id}: {e!s} (attempt {attempt + 1})")
 
     return None
 
@@ -195,8 +236,8 @@ def download_and_extract_artifact(artifact_id, version, target_dir, artifact_typ
                 print(
                     f"Failed downloading {artifact_id}. HTTP {response.status_code} (attempt {attempt + 1})"
                 )
-        except Exception as e:
-            print(f"Error downloading {artifact_id}: {str(e)} (attempt {attempt + 1})")
+        except RequestException as e:
+            print(f"Error downloading {artifact_id}: {e!s} (attempt {attempt + 1})")
 
     return False
 
@@ -226,8 +267,8 @@ def download_subobject(artifact_id, version, subobject_type):
                 print(
                     f"Warning: {subobject_type} for {artifact_id}: HTTP {response.status_code}"
                 )
-        except Exception as e:
-            print(f"Error downloading {subobject_type} for {artifact_id}: {str(e)}")
+        except RequestException as e:
+            print(f"Error downloading {subobject_type} for {artifact_id}: {e!s}")
 
     return None
 
@@ -255,7 +296,7 @@ def download_all_packages():
     # Read artifact inventory for each package
     # =====================================================
 
-    artifacts = []
+    artifacts: dict[str, list] = {}
 
     for package in packages:
         package_id = package["Id"]
@@ -265,7 +306,7 @@ def download_all_packages():
         # Process all artifacts by type
         # =====================================================
 
-        for artifact_type in ARTIFACT_TYPES.keys():
+        for artifact_type in ARTIFACT_TYPES:
             artifacts_url = f"{SAP_HOST}/api/v1/IntegrationPackages('{package_id}')/{ARTIFACT_TYPES[artifact_type]['odata_path']}"
             response = session.get(artifacts_url, timeout=120)
 
@@ -282,6 +323,8 @@ def download_all_packages():
                 )
 
             # Process each artifact
+            artifacts.setdefault(artifact_type, []).extend(package_artifacts)
+            
             for artifact in package_artifacts:
                 artifact_id = artifact["Id"]
                 version = artifact["Version"]
@@ -308,7 +351,7 @@ def download_all_packages():
                     "packageId": package_id,
                     "type": artifact_type,
                     "path": str(target_dir.relative_to(ARTIFACTS_DIR)),
-                    "timestamp": datetime.datetime.now().isoformat(),
+                    "timestamp": runtime_tz_adjusted.isoformat(),
                 }
 
                 with open(
@@ -338,35 +381,38 @@ def git_tag_commit(repo, commit, tags: list[str]):
                 try:
                     repo.git.rev_parse("--verify", tag_name)
                     print(f"Tag '{tag_name}' already exists, skipping")
-                except git.exc.GitCommandError:  # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue]
+                except GitCommandError:  
                     repo.git.tag(tag_name, commit.hexsha)
                     print(f"Created tag '{tag_name}' on commit {commit.hexsha[:8]}")
-        except Exception as e:
-            print(f"Failed to create tag '{tag_name}': {str(e)}")
+        except GitCommandError as e:
+            print(f"Failed to create tag '{tag_name}': {e!s}")
 
     # Push all tags
     try:
         origin = repo.remote(name="origin")
         origin.push(tags=True)
         print("Pushed tags to remote")
-    except Exception as e:
-        print(f"Failed to push tags: {str(e)}")
+    except GitCommandError as e:
+        print(f"Failed to push tags: {e!s}")
 
 
 def git_add_and_push():
-    if git:
+    if git and GitCommandError and InvalidGitRepositoryError:
         try:
             repo = git.Repo(search_parent_directories=False)
 
             # Create new branch for this backup
-            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            timestamp = runtime_tz_adjusted.strftime("%Y%m%d-%H%M%S")
             new_branch_name = f"{GIT_BRANCH_PREFIX}{timestamp}"
 
             try:
                 repo.git.checkout("HEAD", b=new_branch_name)
-            except git.exc.GitCommandError:  # pyright: ignore[reportAttributeAccessIssue]
+            except GitCommandError: 
                 # Branch already exists, checkout existing
                 repo.git.checkout(new_branch_name)
+            except InvalidGitRepositoryError:
+                print("Error: Current directory is not a Git repository. Skipping Git operations.")
+                return
 
             # Add all changes and commit
             repo.git.add(ARTIFACTS_DIR, all=True)
@@ -383,13 +429,13 @@ def git_add_and_push():
                     origin = repo.remote(name="origin")
                     origin.push(new_branch_name)
                     print(f"Pushed changes to branch: {new_branch_name}")
-                except Exception as e:
-                    print(f"Failed to push changes: {str(e)}")
+                except GitCommandError as e:
+                    print(f"Failed to push changes: {e!s}")
             else:
                 print("No changes to commit")
 
-        except Exception as e:
-            print(f"Git operations failed: {str(e)}")
+        except (GitCommandError, InvalidGitRepositoryError) as e:
+            print(f"Git operations failed: {e!s}")
 
 
 if __name__ == "__main__":
